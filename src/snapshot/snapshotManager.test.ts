@@ -50,6 +50,11 @@ describe('saveSnapshot and loadSnapshot', () => {
     expect(snapshot.meta.createdAt).toBeDefined();
   });
 
+  it('saves snapshot file with a .json extension', () => {
+    const filepath = saveSnapshot(TEST_ROUTES, 'v1.0', tmpDir);
+    expect(filepath.endsWith('.json')).toBe(true);
+  });
+
   it('throws when loading a non-existent file', () => {
     expect(() => loadSnapshot('/nonexistent/path.json')).toThrow();
   });
@@ -58,6 +63,12 @@ describe('saveSnapshot and loadSnapshot', () => {
     const badFile = path.join(tmpDir, 'snapshot-bad.json');
     fs.writeFileSync(badFile, JSON.stringify({ foo: 'bar' }));
     expect(() => loadSnapshot(badFile)).toThrow('Invalid snapshot format');
+  });
+
+  it('throws on malformed JSON', () => {
+    const badFile = path.join(tmpDir, 'snapshot-malformed.json');
+    fs.writeFileSync(badFile, 'not valid json {{{');
+    expect(() => loadSnapshot(badFile)).toThrow();
   });
 });
 
