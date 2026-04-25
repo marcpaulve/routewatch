@@ -18,6 +18,9 @@ routewatch snapshot --app ./src/app.ts --out routes.snapshot.json
 
 # Compare routes against a previous snapshot
 routewatch diff --before routes.snapshot.json --app ./src/app.ts
+
+# Exit with a non-zero code if any routes were added or removed (useful in CI)
+routewatch diff --before routes.snapshot.json --app ./src/app.ts --fail-on-change
 ```
 
 **Example output:**
@@ -38,6 +41,7 @@ routewatch diff --before routes.snapshot.json --app ./src/app.ts
 | `--out` | Output file for the snapshot |
 | `--before` | Snapshot file to diff against |
 | `--format` | Output format: `text` (default) or `json` |
+| `--fail-on-change` | Exit with code 1 if any route differences are detected |
 
 ## Supported Frameworks
 
