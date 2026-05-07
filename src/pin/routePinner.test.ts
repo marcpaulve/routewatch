@@ -1,92 +1,107 @@
-import { pinRoutes, matchesPinRule, getPinnedRoutes, formatPinSummary } from './routePinner';
+import { matchesPinRule, pinRoutes, getPinnedRoutes, formatPinSummary, PinRule } from './routePinner';
 import { Route } from '../index';
 
-const sampleRoutes: Route[] = [
-  { method: 'GET', path: '/api/users' },
-  { method: 'POST', path: '/api/users' },
-  { method: 'GET', path: '/api/orders' },
-  { method: 'DELETE', path: '/api/admin/users' },
+const routes: Route[] = [
+  { method: 'GET', path: '/users' },
+  { method: 'POST', path: '/users' },
+  { method: 'GET', path: '/users/:id' },
+  { method: 'DELETE', path: '/admin/users/:id' },
   { method: 'GET', path: '/health' },
 ];
 
 describe('matchesPinRule', () => {
   it('matches by method', () => {
-    expect(matchesPinRule({ method: 'GET', path: '/api/users' }, { method: 'GET' })).toBe(true);
-    expect(matchesPinRule({ method: 'POST', path: '/api/users' }, { method: 'GET' })).toBe(false);
+    const rule: PinRule = { method: 'GET' };
+    expect(matchesPinRule(routes[0], rule)).toBe(true);
+    expect(matchesPinRule(routes[1], rule)).toBe(false);
   });
 
-  it('matches by pathPrefix', () => {
-    expect(matchesPinRule({ method: 'GET', path: '/api/users' }, { pathPrefix: '/api' })).toBe(true);
-    expect(matchesPinRule({ method: 'GET', path: '/health' }, { pathPrefix: '/api' })).toBe(false);
+  it('matches by string path pattern', () => {
+    const rule: PinRule = { pathPattern: '/admin' };
+    expect(matchesPinRule(routes[3], rule)).toBe(true);
+    expect(matchesPinRule(routes[0], rule)).toBe(false);
   });
 
-  it('matches by pathPattern', () => {
-    const rule = { pathPattern: /\/admin\// };
-    expect(matchesPinRule({ method: 'DELETE', path: '/api/admin/users' }, rule)).toBe(true);
-    expect(matchesPinRule({ method: 'GET', path: '/api/users' }, rule)).toBe(false);
+  it('matches by regex path pattern', () => {
+    const rule: PinRule = { pathPattern: /\/users\/:.+/ };
+    expect(matchesPinRule(routes[2], rule)).toBe(true);
+    expect(matchesPinRule(routes[0], rule)).toBe(false);
   });
 
-  it('matches combined method and prefix', () => {
-    const rule = { method: 'GET', pathPrefix: '/api' };
-    expect(matchesPinRule({ method: 'GET', path: '/api/users' }, rule)).toBe(true);
-    expect(matchesPinRule({ method: 'POST', path: '/api/users' }, rule)).toBe(false);
-    expect(matchesPinRule({ method: 'GET', path: '/health' }, rule)).toBe(false);
+  it('matches by method and path pattern', () => {
+    const rule: PinRule = { method: 'GET', pathPattern: '/users' };
+    expect(matchesPinRule(routes[0], rule)).toBe(true);
+    expect(matchesPinRule(routes[1], rule)).toBe(false);
+  });
+
+  it('matches all routes when no constraints given', () => {
+    const rule: PinRule = {};
+    expect(matchesPinRule(routes[0], rule)).toBe(true);
   });
 });
 
 describe('pinRoutes', () => {
   it('pins routes matching rules', () => {
-    const result = pinRoutes(sampleRoutes, [{ pathPrefix: '/api', label: 'api' }]);
-    expect(result.pinned).toHaveLength(4);
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0].path).toBe('/health');
+    const rules: PinRule[] = [{ method: 'GET', label: 'read-only' }];
+    const pinned = pinRoutes(routes, rules);
+    expect(pinned).toHaveLength(3);
+    expect(pinned.every((p) => p.route.method === 'GET')).toBe(true);
+    expect(pinned[0].label).toBe('read-only');
   });
 
-  it('assigns pinnedAt timestamp', () => {
-    const result = pinRoutes(sampleRoutes, [{ method: 'GET' }]);
-    for (const r of result.pinned) {
-      expect(r.pinnedAt).toBeTruthy();
-      expect(new Date(r.pinnedAt).toISOString()).toBe(r.pinnedAt);
-    }
+  it('does not duplicate routes matched by multiple rules', () => {
+    const rules: PinRule[] = [
+      { method: 'GET', pathPattern: '/users' },
+      { pathPattern: '/users' },
+    ];
+    const pinned = pinRoutes(routes, rules);
+    const keys = pinned.map((p) => `${p.route.method}:${p.route.path}`);
+    const unique = new Set(keys);
+    expect(unique.size).toBe(keys.length);
   });
 
-  it('assigns label from matching rule', () => {
-    const result = pinRoutes(sampleRoutes, [{ method: 'DELETE', label: 'dangerous' }]);
-    expect(result.pinned[0].label).toBe('dangerous');
+  it('returns empty array when no rules match', () => {
+    const rules: PinRule[] = [{ method: 'PATCH' }];
+    expect(pinRoutes(routes, rules)).toHaveLength(0);
   });
 
-  it('returns all routes as skipped when no rules match', () => {
-    const result = pinRoutes(sampleRoutes, [{ pathPrefix: '/nonexistent' }]);
-    expect(result.pinned).toHaveLength(0);
-    expect(result.skipped).toHaveLength(sampleRoutes.length);
+  it('stores pinnedAt timestamp', () => {
+    const rules: PinRule[] = [{ method: 'GET', pathPattern: '/health' }];
+    const pinned = pinRoutes(routes, rules);
+    expect(pinned[0].pinnedAt).toBeTruthy();
+    expect(new Date(pinned[0].pinnedAt).toString()).not.toBe('Invalid Date');
   });
 });
 
 describe('getPinnedRoutes', () => {
-  it('returns all pinned routes when no label given', () => {
-    const result = pinRoutes(sampleRoutes, [{ pathPrefix: '/api', label: 'api' }, { pathPrefix: '/health', label: 'infra' }]);
-    expect(getPinnedRoutes(result.pinned)).toHaveLength(result.pinned.length);
-  });
-
-  it('filters by label', () => {
-    const result = pinRoutes(sampleRoutes, [{ pathPrefix: '/api', label: 'api' }, { pathPrefix: '/health', label: 'infra' }]);
-    const apiOnly = getPinnedRoutes(result.pinned, 'infra');
-    expect(apiOnly.every((r) => r.label === 'infra')).toBe(true);
+  it('extracts route objects from pinned entries', () => {
+    const rules: PinRule[] = [{ method: 'DELETE' }];
+    const pinned = pinRoutes(routes, rules);
+    const extracted = getPinnedRoutes(pinned);
+    expect(extracted).toHaveLength(1);
+    expect(extracted[0]).toEqual({ method: 'DELETE', path: '/admin/users/:id' });
   });
 });
 
 describe('formatPinSummary', () => {
-  it('includes counts in summary', () => {
-    const result = pinRoutes(sampleRoutes, [{ pathPrefix: '/api' }]);
-    const summary = formatPinSummary(result);
-    expect(summary).toContain('Pinned routes: 4');
-    expect(summary).toContain('Skipped routes: 1');
+  it('returns message when no routes pinned', () => {
+    expect(formatPinSummary([])).toBe('No routes pinned.');
   });
 
-  it('lists pinned routes', () => {
-    const result = pinRoutes(sampleRoutes, [{ method: 'DELETE', label: 'dangerous' }]);
-    const summary = formatPinSummary(result);
-    expect(summary).toContain('DELETE');
-    expect(summary).toContain('[dangerous]');
+  it('formats pinned routes with labels', () => {
+    const rules: PinRule[] = [{ method: 'GET', label: 'safe' }];
+    const pinned = pinRoutes(routes, rules);
+    const summary = formatPinSummary(pinned);
+    expect(summary).toContain('Pinned routes (3)');
+    expect(summary).toContain('[safe]');
+    expect(summary).toContain('GET /users');
+  });
+
+  it('formats pinned routes without labels', () => {
+    const rules: PinRule[] = [{ method: 'POST' }];
+    const pinned = pinRoutes(routes, rules);
+    const summary = formatPinSummary(pinned);
+    expect(summary).toContain('POST /users');
+    expect(summary).not.toContain('[');
   });
 });

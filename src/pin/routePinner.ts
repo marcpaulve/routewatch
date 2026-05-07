@@ -1,71 +1,64 @@
 import { Route } from '../index';
 
-export interface PinnedRoute extends Route {
-  pinnedAt: string;
-  label?: string;
-}
-
-export interface PinResult {
-  pinned: PinnedRoute[];
-  skipped: Route[];
-}
-
-export interface PinMatchRule {
+export interface PinRule {
   method?: string;
-  pathPrefix?: string;
-  pathPattern?: RegExp;
+  pathPattern?: string | RegExp;
   label?: string;
 }
 
-export function matchesPinRule(route: Route, rule: PinMatchRule): boolean {
+export interface PinnedRoute {
+  route: Route;
+  label?: string;
+  pinnedAt: string;
+}
+
+export function matchesPinRule(route: Route, rule: PinRule): boolean {
   if (rule.method && route.method.toUpperCase() !== rule.method.toUpperCase()) {
     return false;
   }
-  if (rule.pathPrefix && !route.path.startsWith(rule.pathPrefix)) {
-    return false;
-  }
-  if (rule.pathPattern && !rule.pathPattern.test(route.path)) {
-    return false;
+  if (rule.pathPattern) {
+    if (rule.pathPattern instanceof RegExp) {
+      return rule.pathPattern.test(route.path);
+    }
+    return route.path.includes(rule.pathPattern);
   }
   return true;
 }
 
-export function pinRoutes(routes: Route[], rules: PinMatchRule[]): PinResult {
-  const pinnedAt = new Date().toISOString();
+export function pinRoutes(routes: Route[], rules: PinRule[]): PinnedRoute[] {
   const pinned: PinnedRoute[] = [];
-  const skipped: Route[] = [];
+  const seen = new Set<string>();
 
   for (const route of routes) {
-    const matchingRule = rules.find((rule) => matchesPinRule(route, rule));
-    if (matchingRule) {
-      pinned.push({ ...route, pinnedAt, label: matchingRule.label });
-    } else {
-      skipped.push(route);
+    for (const rule of rules) {
+      if (matchesPinRule(route, rule)) {
+        const key = `${route.method}:${route.path}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          pinned.push({
+            route,
+            label: rule.label,
+            pinnedAt: new Date().toISOString(),
+          });
+        }
+        break;
+      }
     }
   }
 
-  return { pinned, skipped };
+  return pinned;
 }
 
-export function getPinnedRoutes(routes: PinnedRoute[], label?: string): PinnedRoute[] {
-  if (!label) return routes;
-  return routes.filter((r) => r.label === label);
+export function getPinnedRoutes(pinned: PinnedRoute[]): Route[] {
+  return pinned.map((p) => p.route);
 }
 
-export function formatPinSummary(result: PinResult): string {
-  const lines: string[] = [
-    `Pinned routes: ${result.pinned.length}`,
-    `Skipped routes: ${result.skipped.length}`,
-  ];
-
-  if (result.pinned.length > 0) {
-    lines.push('');
-    lines.push('Pinned:');
-    for (const r of result.pinned) {
-      const labelStr = r.label ? ` [${r.label}]` : '';
-      lines.push(`  ${r.method.toUpperCase().padEnd(7)} ${r.path}${labelStr}`);
-    }
+export function formatPinSummary(pinned: PinnedRoute[]): string {
+  if (pinned.length === 0) return 'No routes pinned.';
+  const lines = [`Pinned routes (${pinned.length}):`, ''];
+  for (const p of pinned) {
+    const label = p.label ? ` [${p.label}]` : '';
+    lines.push(`  ${p.route.method.toUpperCase()} ${p.route.path}${label}`);
   }
-
   return lines.join('\n');
 }
