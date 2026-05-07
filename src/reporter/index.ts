@@ -11,6 +11,14 @@ export interface ReportOptions {
   title?: string;
 }
 
+/**
+ * Generates a formatted report of route diffs.
+ * Optionally writes the report to a file if `outputFile` is specified.
+ *
+ * @param diffs - Array of route differences to report on
+ * @param options - Reporting options including format, output file, and title
+ * @returns The formatted report as a string
+ */
 export function generateReport(
   diffs: RouteDiff[],
   options: ReportOptions
@@ -43,6 +51,13 @@ export function generateReport(
   return output;
 }
 
+/**
+ * Generates a report and prints it to stdout.
+ *
+ * @param diffs - Array of route differences to report on
+ * @param format - Output format (default: 'text')
+ * @param title - Optional report title
+ */
 export function printReport(
   diffs: RouteDiff[],
   format: ReportFormat = 'text',
@@ -50,6 +65,19 @@ export function printReport(
 ): void {
   const output = generateReport(diffs, { format, title });
   console.log(output);
+}
+
+/**
+ * Returns a summary of the diffs: total count broken down by change type.
+ *
+ * @param diffs - Array of route differences to summarize
+ * @returns An object with counts for added, removed, and modified routes
+ */
+export function summarizeDiffs(diffs: RouteDiff[]): { added: number; removed: number; modified: number; total: number } {
+  const added = diffs.filter((d) => d.type === 'added').length;
+  const removed = diffs.filter((d) => d.type === 'removed').length;
+  const modified = diffs.filter((d) => d.type === 'modified').length;
+  return { added, removed, modified, total: diffs.length };
 }
 
 export { formatReport, formatTextReport, formatMarkdownReport, formatJsonReport };
